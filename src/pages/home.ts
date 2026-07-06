@@ -11,4 +11,4 @@ if (homeReviews) {
   homeReviews.innerHTML = googleReviews.slice(0, 3).map(renderReviewCard).join('');
 }
 
-initReveal('.why-card, .work-showcase-item, .testimonial-card');
+initReveal('.why-card, .scattered-photos img, .testimonial-card');

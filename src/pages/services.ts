@@ -4,4 +4,4 @@ import { initReveal } from '../components/reveal';
 initNav();
 initHeaderScroll();
 highlightActiveLink();
-initReveal('.service-card, .specialty-column, .step');
+initReveal('.service-card, .specialty-column, .step, .scattered-photos img');
