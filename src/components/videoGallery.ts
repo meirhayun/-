@@ -7,26 +7,22 @@ export interface VideoItem {
   readonly type: 'youtube' | 'local';
 }
 
-export const aboutVideos: readonly VideoItem[] = [
-  {
-    id: 'demo-1',
-    title: 'התקנת רשת נגד יונים',
-    description: 'דוגמה לעבודה מקצועית על גג בניין משותף',
-    src: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    type: 'youtube',
-  },
-  {
-    id: 'demo-2',
-    title: 'עבודה בגובה — הרחקת יונים',
-    description: 'צוות מוסמך מבצע התקנה בטוחה ומדויקת',
-    src: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    type: 'youtube',
-  },
-];
+export const aboutVideos: readonly VideoItem[] = [];
 
 export function initVideoGallery(containerId = 'videoGallery'): void {
   const container = document.getElementById(containerId);
   if (!container) return;
+
+  const note = container.parentElement?.querySelector<HTMLElement>('.video-note');
+
+  if (aboutVideos.length === 0) {
+    container.hidden = true;
+    if (note) note.hidden = true;
+    return;
+  }
+
+  if (note) note.hidden = false;
+  container.hidden = false;
 
   container.innerHTML = aboutVideos
     .map(
