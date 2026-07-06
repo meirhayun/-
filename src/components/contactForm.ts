@@ -1,14 +1,11 @@
 import { serviceLabels, type ContactFormData, type ServiceType } from '../types';
-
 import { WHATSAPP_URL } from '../config';
+import { uploadContactPhoto } from '../services/uploadContactPhoto';
 
 const VALID_SERVICES: readonly ServiceType[] = ['home', 'building', 'cleaning', 'scaring'];
-
 const MAX_PHOTO_SIZE_MB = 10;
-
 const WHATSAPP_PHONE = '972509996630';
 
-/** בדיקת תקינות מספר טלפון ישראלי (נייד או קווי). */
 function isValidPhone(phone: string): boolean {
   const digits = phone.replace(/\D/g, '');
   return /^0\d{8,9}$/.test(digits);
@@ -35,15 +32,6 @@ function getPhotoFile(form: HTMLFormElement): File | null {
   return input?.files?.[0] ?? null;
 }
 
-function prepareShareFile(photo: File): File {
-  const ext = photo.type === 'image/png' ? 'png' : photo.type === 'image/webp' ? 'webp' : 'jpg';
-  const name = photo.name && !photo.name.startsWith('image.') ? photo.name : `photo-maakom.${ext}`;
-  if (photo.name === name) return photo;
-  return new File([photo], name, { type: photo.type || `image/${ext}` });
-}
-
-type PhotoDelivery = 'clipboard' | 'download';
-
 function buildWhatsAppUrl(message: string): string {
   return `${WHATSAPP_URL}?text=${encodeURIComponent(message)}`;
 }
@@ -63,29 +51,6 @@ function openWhatsAppChat(message: string): void {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-async function copyPhotoToClipboard(photo: File): Promise<boolean> {
-  if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') return false;
-
-  try {
-    const type = photo.type || 'image/jpeg';
-    await navigator.clipboard.write([new ClipboardItem({ [type]: photo })]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function downloadPhoto(photo: File): void {
-  const file = prepareShareFile(photo);
-  const url = URL.createObjectURL(file);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = file.name;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-/** מאמת את נתוני הטופס ומחזיר רשימת שגיאות (ריקה = תקין). */
 function validate(form: HTMLFormElement, data: ContactFormData): string[] {
   const errors: string[] = [];
   if (data.name.length < 2) errors.push('נא להזין שם מלא תקין.');
@@ -113,7 +78,7 @@ function showErrors(form: HTMLFormElement, errors: string[]): void {
   box.innerHTML = errors.map((e) => `<span>⚠️ ${e}</span>`).join('');
 }
 
-function buildWhatsAppMessage(data: ContactFormData): string {
+function buildWhatsAppMessage(data: ContactFormData, photoUrl: string): string {
   const lines = [
     'שלום, אני מעוניין/ת בהצעת מחיר.',
     '',
@@ -124,23 +89,25 @@ function buildWhatsAppMessage(data: ContactFormData): string {
   if (data.city) lines.push(`*עיר:* ${data.city}`);
   if (data.service) lines.push(`*סוג שירות:* ${serviceLabels[data.service]}`);
   if (data.message) lines.push('', `*פרטים:* ${data.message}`);
+  lines.push('', '*תמונה מהמקום:*', photoUrl);
 
   return lines.join('\n');
 }
 
-function showSuccess(form: HTMLFormElement, whatsappUrl: string, photoUrl: string, delivery: PhotoDelivery): void {
-  const notes: Record<PhotoDelivery, string> = {
-    clipboard:
-      'נפתח צ\'אט וואטסאפ עם חיון (050-9996630) וההודעה מוכנה. <strong>הדביקו את התמונה</strong> (Ctrl+V / לחיצה ארוכה → הדבק) ולחצו שלח.',
-    download:
-      'נפתח צ\'אט וואטסאפ עם חיון (050-9996630) וההודעה מוכנה. <strong>צרפו את התמונה</strong> דרך 📎 — הקובץ כבר הורד למכשיר — ולחצו שלח.',
-  };
+function setSubmitting(form: HTMLFormElement, submitting: boolean): void {
+  const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if (!button) return;
 
+  button.disabled = submitting;
+  button.textContent = submitting ? 'מעלה תמונה ומעביר לוואטסאפ...' : 'שלח בקשה להצעת מחיר';
+}
+
+function showSuccess(form: HTMLFormElement, whatsappUrl: string, photoUrl: string): void {
   form.innerHTML = `
     <div class="form-success">
       <div class="form-success-icon">✅</div>
       <h3>מעבירים אתכם לוואטסאפ</h3>
-      <p>${notes[delivery]}</p>
+      <p>נפתח צ'אט עם חיון (050-9996630). ההודעה כוללת את כל הפרטים <strong>וקישור לתמונה</strong> — לחצו שלח.</p>
       <div class="form-success-photo"><img src="${photoUrl}" alt="התמונה שצילמתם"></div>
       <a href="${whatsappUrl}" class="btn btn-whatsapp btn-full" target="_blank" rel="noopener" style="margin-top:20px">
         פתיחה מחדש של וואטסאפ
@@ -149,15 +116,19 @@ function showSuccess(form: HTMLFormElement, whatsappUrl: string, photoUrl: strin
 }
 
 async function submitToWhatsApp(form: HTMLFormElement, data: ContactFormData, photo: File): Promise<void> {
-  const message = buildWhatsAppMessage(data);
-  const whatsappUrl = buildWhatsAppUrl(message);
-  const photoUrl = URL.createObjectURL(photo);
-  const copied = await copyPhotoToClipboard(photo);
-  const delivery: PhotoDelivery = copied ? 'clipboard' : 'download';
+  setSubmitting(form, true);
 
-  if (!copied) downloadPhoto(photo);
-  openWhatsAppChat(message);
-  showSuccess(form, whatsappUrl, photoUrl, delivery);
+  try {
+    const uploadedPhotoUrl = await uploadContactPhoto(photo);
+    const message = buildWhatsAppMessage(data, uploadedPhotoUrl);
+    const whatsappUrl = buildWhatsAppUrl(message);
+
+    openWhatsAppChat(message);
+    showSuccess(form, whatsappUrl, uploadedPhotoUrl);
+  } catch {
+    setSubmitting(form, false);
+    showErrors(form, ['לא הצלחנו להעלות את התמונה. בדקו חיבור לאינטרנט ונסו שוב.']);
+  }
 }
 
 function initPhotoPreview(form: HTMLFormElement): void {
@@ -200,7 +171,6 @@ function initPhotoPreview(form: HTMLFormElement): void {
   removeBtn.addEventListener('click', clearPreview);
 }
 
-/** מאתחל את טופס יצירת הקשר עם ולידציה. */
 export function initContactForm(): void {
   const form = document.querySelector<HTMLFormElement>('#contactForm');
   if (!form) return;
